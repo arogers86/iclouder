@@ -10,7 +10,7 @@ import json
 import sys
 import os
 from typing import List
-
+import random
 
 import url_utils
 
@@ -44,6 +44,7 @@ def get_stream(host: str, token: str):
     Download web stream of available photos
     """
     url = "https://{}/{}/sharedstreams/webstream".format(host, token)
+    logging.debug(f"Requesting stream from URL: {url}")
     response = requests.post(url, json.dumps({
         'streamCtag': 'null'
     }), allow_redirects=True)
@@ -51,6 +52,7 @@ def get_stream(host: str, token: str):
     if response.status_code == 330:
         redirect_data = json.loads(response.content)
         new_host = redirect_data.get("X-Apple-MMe-Host")
+        logging.debug(f"Redirecting to new host: {new_host}")
         return get_stream(new_host, token)
     elif response.status_code == 200:
         data = json.loads(response.content)
@@ -59,20 +61,36 @@ def get_stream(host: str, token: str):
             host, token, [photo['photoGuid'] for photo in photos])
         return filter_best_assets(photos, asset_urls.get('items', []))
     else:
+        logging.error(f"Received unexpected response from server: {response.status_code}")
+        logging.debug(f"Response content: {response.content}")
         raise ValueError("Received unexpected response from server.")
 
 
 def get_asset_urls(host: str, token: str, photoGuids: List[str]):
     """
-    Get precice asset URLs based on a list of photo GUIDs
+    Get precise asset URLs based on a list of photo GUIDs
     """
     url = "https://{}/{}/sharedstreams/webasseturls".format(host, token)
+    logging.debug(f"Requesting asset URLs from URL: {url}")
     response = requests.post(url, json.dumps(
         {'photoGuids': photoGuids}), allow_redirects=True)
     if response.status_code == 200:
         return json.loads(response.content)
     else:
+        logging.error(f"Received unexpected response from server: {response.status_code}")
+        logging.debug(f"Response content: {response.content}")
         raise ValueError("Received unexpected response from server.")
+
+
+def download_photo(url, destination):
+    logging.debug(f"Downloading photo from URL: {url}")
+    response = requests.get(url, allow_redirects=True)
+    if response.status_code != 200:
+        logger.error("Failed to download the photo.")
+        logger.debug("Status code: {} (for url: {})".format(
+            response.status_code, url))
+    else:
+        open(destination, 'wb').write(response.content)
 
 
 if __name__ == "__main__":
@@ -83,7 +101,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--debug", help="Show logs up to debug level.", action='store_true')
     parser.add_argument(
-        "--destination", help="Show logs up to debug level.", default='.')
+        "--destination", help="Destination directory for downloads.", default='.')
+    parser.add_argument(
+        "--single", help="Download a single random photo.", action='store_true')
+    parser.add_argument(
+        "--filename", help="Fixed filename for the downloaded photo (overwrites each time).")
     arguments = parser.parse_args()
 
     logger = logging.getLogger("iclouder")
@@ -100,7 +122,7 @@ if __name__ == "__main__":
         data = get_stream(host, arguments.token)
     except ValueError as e:
         logger.error(
-            "Could not retreive item stream! (Use debug flag for more info.)")
+            "Could not retrieve item stream! (Use debug flag for more info.)")
         if arguments.debug:
             logger.exception(e)
         sys.exit()
@@ -114,21 +136,27 @@ if __name__ == "__main__":
         logging.error("Destination directory does not exist!")
         sys.exit()
 
-    logger.info("Downloading: {} files.".format(len(data)))
-    for key, item in data.items():
+    if arguments.single:
+        # Pick a random photo
+        key, item = random.choice(list(data.items()))
         url_location = item.get('url_location')
         url_path = item.get('url_path')
         url = "https://{}{}".format(url_location, url_path)
 
-        end_index = url.index('?')
-        start_index = url.rindex('/', 0, end_index)
-        file_name = url[(start_index+1):end_index]
+        output_file = "{}{}".format(directory, arguments.filename if arguments.filename else 'photo.jpg')
+        download_photo(url, output_file)
+        logger.info("Downloaded a single random photo as {}.".format(output_file))
+    else:
+        logger.info("Downloading: {} files.".format(len(data)))
+        for key, item in data.items():
+            url_location = item.get('url_location')
+            url_path = item.get('url_path')
+            url = "https://{}{}".format(url_location, url_path)
 
-        response = requests.get(url, allow_redirects=True)
-        if response.status_code != 200:
-            logger.error("Failed to download a photo.")
-            logger.debug("Status code: {} (for url: {})".format(
-                response.status_code, url))
-        else:
+            end_index = url.index('?')
+            start_index = url.rindex('/', 0, end_index)
+            file_name = url[(start_index+1):end_index]
+
             output_file = "{}{}".format(directory, file_name)
-            open(output_file, 'wb').write(response.content)
+            download_photo(url, output_file)
+            logger.info("Downloaded: {}.".format(output_file))
