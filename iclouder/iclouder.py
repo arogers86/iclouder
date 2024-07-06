@@ -134,6 +134,16 @@ def download_file(url: str, directory: str, filename: str = None):
             output_file = os.path.join(directory, file_name)
         open(output_file, 'wb').write(response.content)
 
+def select_random_photo(data, ignore_list):
+    """
+    Select a random photo that is not in the ignore list.
+    """
+    available_photos = [guid for guid in data.keys() if guid not in ignore_list]
+    logger.debug(f"Available photos count: {len(available_photos)}")
+    if not available_photos:
+        raise ValueError("No new photos available to download.")
+    return random.choice(available_photos)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("token", help="The token part of the shared iCloud album")
@@ -141,6 +151,7 @@ if __name__ == "__main__":
     parser.add_argument("--destination", help="Destination directory for downloaded files.", default='.')
     parser.add_argument("--single", help="Download a single random photo.", action='store_true')
     parser.add_argument("--filename", help="Filename to save the single downloaded photo as.", default='random_photo.jpg')
+    parser.add_argument("--ignore", help="Number of previously downloaded photos to ignore.", type=int, default=50)
     arguments = parser.parse_args()
 
     logger = logging.getLogger("iclouder")
@@ -155,6 +166,7 @@ if __name__ == "__main__":
     host = f"p{partition}-sharedstreams.icloud.com"
     try:
         data = get_stream(host, arguments.token)
+        logger.debug(f"Fetched data: {data}")
     except ValueError as e:
         logger.error("Could not retrieve item stream! (Use the debug flag for more info.)")
         if arguments.debug:
@@ -172,11 +184,29 @@ if __name__ == "__main__":
         logging.error("Destination directory does not exist!")
         sys.exit()
 
+    # List to keep track of last downloaded photos
+    ignore_list = []
+    ignore_list_file = os.path.join(directory, 'ignore_list.txt')
+
+    # Load ignore list from file if it exists
+    if os.path.exists(ignore_list_file):
+        with open(ignore_list_file, 'r') as f:
+            ignore_list = f.read().splitlines()
+
+    logger.debug(f"Ignore list loaded: {ignore_list}")
+
     if arguments.single:
         if data:
-            item = random.choice(list(data.values()))
-            url = get_download_url(item)
-            download_file(url, directory, arguments.filename)
+            try:
+                photo_guid = select_random_photo(data, ignore_list)
+                item = data[photo_guid]
+                url = get_download_url(item)
+                download_file(url, directory, arguments.filename)
+                ignore_list.append(photo_guid)
+                if len(ignore_list) > arguments.ignore:
+                    ignore_list.pop(0)
+            except ValueError as e:
+                logger.error(e)
         else:
             logger.error("No photos available to download.")
     else:
@@ -184,3 +214,12 @@ if __name__ == "__main__":
         for key, item in data.items():
             url = get_download_url(item)
             download_file(url, directory)
+            ignore_list.append(key)
+            if len(ignore_list) > arguments.ignore:
+                ignore_list.pop(0)
+
+    logger.debug(f"Ignore list to save: {ignore_list}")
+
+    # Save ignore list to file
+    with open(ignore_list_file, 'w') as f:
+        f.write('\n'.join(ignore_list))
