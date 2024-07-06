@@ -1,4 +1,3 @@
-```markdown
 # iCloud Shared Album Downloader
 
 This script allows you to download photos from a shared iCloud album. You can download all photos or a single random photo while keeping track of previously downloaded photos to avoid duplicates.
