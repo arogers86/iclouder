@@ -134,15 +134,15 @@ def download_file(url: str, directory: str, filename: str = None):
             output_file = os.path.join(directory, file_name)
         open(output_file, 'wb').write(response.content)
 
-def select_random_photo(data, ignore_list):
+def select_random_photos(data, ignore_list, count):
     """
-    Select a random photo that is not in the ignore list.
+    Select a specified number of random photos that are not in the ignore list.
     """
     available_photos = [guid for guid in data.keys() if guid not in ignore_list]
     logger.debug(f"Available photos count: {len(available_photos)}")
-    if not available_photos:
-        raise ValueError("No new photos available to download.")
-    return random.choice(available_photos)
+    if len(available_photos) < count:
+        raise ValueError("Not enough new photos available to download.")
+    return random.sample(available_photos, count)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -150,6 +150,7 @@ if __name__ == "__main__":
     parser.add_argument("--debug", help="Show logs up to the debug level.", action='store_true')
     parser.add_argument("--destination", help="Destination directory for downloaded files.", default='.')
     parser.add_argument("--single", help="Download a single random photo.", action='store_true')
+    parser.add_argument("--count", help="Number of random photos to download.", type=int, default=1)
     parser.add_argument("--filename", help="Filename to save the single downloaded photo as.", default='random_photo.jpg')
     parser.add_argument("--ignore", help="Number of previously downloaded photos to ignore.", type=int, default=50)
     arguments = parser.parse_args()
@@ -195,16 +196,21 @@ if __name__ == "__main__":
 
     logger.debug(f"Ignore list loaded: {ignore_list}")
 
-    if arguments.single:
+    if arguments.single or arguments.count > 1:
         if data:
             try:
-                photo_guid = select_random_photo(data, ignore_list)
-                item = data[photo_guid]
-                url = get_download_url(item)
-                download_file(url, directory, arguments.filename)
-                ignore_list.append(photo_guid)
-                if len(ignore_list) > arguments.ignore:
-                    ignore_list.pop(0)
+                photo_guids = select_random_photos(data, ignore_list, arguments.count)
+                for idx, photo_guid in enumerate(photo_guids, start=1):
+                    item = data[photo_guid]
+                    if arguments.filename:
+                        filename = f"{os.path.splitext(arguments.filename)[0]}_{idx}{os.path.splitext(arguments.filename)[1]}"
+                    else:
+                        filename = None
+                    url = get_download_url(item)
+                    download_file(url, directory, filename)
+                    ignore_list.append(photo_guid)
+                    if len(ignore_list) > arguments.ignore:
+                        ignore_list.pop(0)
             except ValueError as e:
                 logger.error(e)
         else:
