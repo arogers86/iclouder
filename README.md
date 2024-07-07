@@ -37,6 +37,15 @@ To download a single random photo and save it as `random_photo.jpg`:
 python iclouder.py <your_token> --single --filename random_photo.jpg
 ```
 
+### Download a Multiple Random Photos
+
+To download a specified number of random photos (e.g., 2 photos) and save them with specified filenames::
+
+```sh
+python iclouder.py <your_token> --count 2 --filename random_photo.jpg
+```
+This will save the photos as random_photo_1.jpg, random_photo_2.jpg, etc.
+
 ### Download All Photos to a Specific Directory
 
 To download all photos to a specific directory:
