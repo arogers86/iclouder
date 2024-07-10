@@ -56,6 +56,14 @@ def get_download_url(item: dict) -> str:
     url_path = get_url_path(item)
     return f"https://{url_location}{url_path}"
 
+def get_source_filename(url: str) -> str:
+    """
+    Extract the source filename from the URL path.
+    """
+    start_index = url.rindex('/') + 1
+    end_index = url.index('?')
+    return url[start_index:end_index]
+
 # Original iclouder.py content
 def filter_best_assets(photos: List[dict], asset_urls: dict):
     """
@@ -133,6 +141,7 @@ def download_file(url: str, directory: str, filename: str = None):
             file_name = url[(start_index + 1):end_index]
             output_file = os.path.join(directory, file_name)
         open(output_file, 'wb').write(response.content)
+    return output_file
 
 def select_random_photos(data, ignore_list, count):
     """
@@ -152,7 +161,8 @@ if __name__ == "__main__":
     parser.add_argument("--single", help="Download a single random photo.", action='store_true')
     parser.add_argument("--count", help="Number of random photos to download.", type=int, default=1)
     parser.add_argument("--filename", help="Filename to save the single downloaded photo as.", default='random_photo.jpg')
-    parser.add_argument("--ignore", help="Number of previously downloaded photos to ignore.", type=int, default=50)
+    parser.add_argument("--ignore", help="Number of previously downloaded photos to ignore and log.", type=int)
+    parser.add_argument("--log_downloads", help="Number of downloads to log GUIDs for.", type=int)
     arguments = parser.parse_args()
 
     logger = logging.getLogger("iclouder")
@@ -185,47 +195,51 @@ if __name__ == "__main__":
         logging.error("Destination directory does not exist!")
         sys.exit()
 
-    # List to keep track of last downloaded photos
-    ignore_list = []
-    ignore_list_file = os.path.join(directory, 'ignore_list.txt')
+    # Log file for download history and ignore list
+    log_file = os.path.join(directory, 'download_log.txt')
+    log_entries = []
 
-    # Load ignore list from file if it exists
-    if os.path.exists(ignore_list_file):
-        with open(ignore_list_file, 'r') as f:
-            ignore_list = f.read().splitlines()
+    # Load log entries from file if it exists
+    if os.path.exists(log_file):
+        with open(log_file, 'r') as f:
+            log_entries = f.read().splitlines()
+
+    # Extract the ignore list from the log entries if --ignore is enabled
+    ignore_list = []
+    if arguments.ignore:
+        ignore_list = [entry.split(':')[0] for entry in log_entries[-arguments.ignore:]]
 
     logger.debug(f"Ignore list loaded: {ignore_list}")
 
-    if arguments.single or arguments.count > 1:
-        if data:
-            try:
-                photo_guids = select_random_photos(data, ignore_list, arguments.count)
-                for idx, photo_guid in enumerate(photo_guids, start=1):
-                    item = data[photo_guid]
+    if data:
+        try:
+            photo_guids = select_random_photos(data, ignore_list, arguments.count)
+            for idx, photo_guid in enumerate(photo_guids, start=1):
+                item = data[photo_guid]
+                url = get_download_url(item)
+                source_filename = get_source_filename(url)
+                
+                if arguments.single:
+                    download_file(url, directory, arguments.filename)
+                else:
                     if arguments.filename:
                         filename = f"{os.path.splitext(arguments.filename)[0]}_{idx}{os.path.splitext(arguments.filename)[1]}"
                     else:
                         filename = None
-                    url = get_download_url(item)
                     download_file(url, directory, filename)
-                    ignore_list.append(photo_guid)
-                    if len(ignore_list) > arguments.ignore:
-                        ignore_list.pop(0)
-            except ValueError as e:
-                logger.error(e)
-        else:
-            logger.error("No photos available to download.")
+                    
+                log_entries.append(f"{photo_guid}:{source_filename}")
+                if arguments.ignore and len(log_entries) > arguments.ignore:
+                    log_entries.pop(0)
+                elif arguments.log_downloads and len(log_entries) > arguments.log_downloads:
+                    log_entries.pop(0)
+        except ValueError as e:
+            logger.error(e)
     else:
-        logger.info("Downloading: {} files.".format(len(data)))
-        for key, item in data.items():
-            url = get_download_url(item)
-            download_file(url, directory)
-            ignore_list.append(key)
-            if len(ignore_list) > arguments.ignore:
-                ignore_list.pop(0)
+        logger.error("No photos available to download.")
 
-    logger.debug(f"Ignore list to save: {ignore_list}")
+    logger.debug(f"Log entries to save: {log_entries}")
 
-    # Save ignore list to file
-    with open(ignore_list_file, 'w') as f:
-        f.write('\n'.join(ignore_list))
+    # Save log entries to file
+    with open(log_file, 'w') as f:
+        f.write('\n'.join(log_entries))
