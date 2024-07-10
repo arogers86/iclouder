@@ -62,6 +62,14 @@ To specify the number of previously downloaded photos to ignore:
 python iclouder.py <your_token> --single --filename random_photo.jpg --ignore 50
 ```
 
+### Log Downloaded Photos
+
+To log the GUID and source image filenames for a specified number of downloads:
+
+```sh
+python iclouder.py <your_token> --log_downloads 150
+```
+
 ### Enable Debug Logging
 
 To enable debug logging for more detailed output:
@@ -72,7 +80,9 @@ python iclouder.py <your_token> --debug
 
 ### Note on Token
 
-The token is the part of the URL after the `#` (and before any potential semicolon). The tokens seem to be 15 characters long.
+The token is found at the end of the shared album URL after the `#` (and before any potential semicolon). The tokens seem to be 15 characters long.
+
+e.g. https​://www​.icloud.com/sharedalbum/#`ABCdefG1237654`
 
 ## License
 
